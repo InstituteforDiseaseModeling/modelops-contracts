@@ -16,14 +16,14 @@ class TableArtifact:
     """Extracted table output from simulation.
     
     For MVP, all artifacts are Arrow IPC format tables.
-    Large tables are stored in CAS (content-addressed storage),
+    Large tables can be stored externally with a reference,
     small ones are inlined in the response.
     
     Attributes:
         content_type: MIME type, always Arrow IPC for MVP
         size: Size in bytes of the artifact
         inline: The actual bytes if size <= INLINE_CAP
-        ref: CAS path reference if size > INLINE_CAP
+        ref: External storage reference if size > INLINE_CAP
         checksum: BLAKE2b-256 hash of the content
     
     Invariants:
@@ -97,7 +97,7 @@ class SimReturn:
         outputs: Map of extractor names to table artifacts
         error: Optional semantic error information
         error_details: Optional full error payload (traceback, logs, etc.)
-        logs_ref: Optional CAS path to execution logs
+        logs_ref: Optional path to execution logs
         metrics: Optional execution metrics (runtime, memory, etc.)
         cached: Whether this result came from cache
     """

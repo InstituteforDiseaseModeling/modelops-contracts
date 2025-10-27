@@ -172,57 +172,6 @@ class BundleRepository(Protocol):
         ...
 
 
-class CAS(Protocol):
-    """Content-addressable storage for large artifacts.
-    
-    Used for storing simulation outputs that exceed inline limits.
-    Implementations might use:
-    - S3
-    - Azure Blob Storage
-    - Local filesystem
-    - In-memory (for testing)
-    """
-    
-    def put(self, data: bytes, checksum_hex: str) -> str:
-        """Store data in CAS.
-        
-        Args:
-            data: Raw bytes to store
-            checksum_hex: Expected SHA256 hex digest for verification
-            
-        Returns:
-            Reference string for retrieving the data
-            
-        Raises:
-            ChecksumError if data doesn't match expected checksum
-        """
-        ...
-    
-    def get(self, ref: str) -> bytes:
-        """Retrieve data from CAS.
-        
-        Args:
-            ref: Reference returned from put()
-            
-        Returns:
-            Raw bytes data
-            
-        Raises:
-            KeyError if reference not found
-        """
-        ...
-    
-    def exists(self, ref: str) -> bool:
-        """Check if a reference exists in CAS.
-        
-        Args:
-            ref: Reference to check
-            
-        Returns:
-            True if exists, False otherwise
-        """
-        ...
-
 
 class WireFunction(Protocol):
     """Contract for simulation execution inside isolated environment.
@@ -260,7 +209,6 @@ __all__ = [
     "SimulationService",
     # Secondary ports
     "ExecutionEnvironment",
-    "BundleRepository", 
-    "CAS",
+    "BundleRepository",
     "WireFunction",
 ]

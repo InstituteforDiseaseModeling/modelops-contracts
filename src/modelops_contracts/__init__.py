@@ -32,7 +32,6 @@ from .ports import (
     SimulationService,
     ExecutionEnvironment,
     BundleRepository,
-    CAS,
     WireFunction,
 )
 from .manifest import BundleManifest
@@ -60,6 +59,7 @@ from .auth import (
     AuthProvider,
 )
 from .environment import EnvironmentDigest
+from .utils import canonical_task_id, bundle12, aggregation_id
 
 __version__ = CONTRACTS_VERSION
 
@@ -102,7 +102,6 @@ __all__ = [
     "SimulationService",
     "ExecutionEnvironment",
     "BundleRepository",
-    "CAS",
     "WireFunction",
     # Manifest and registry types
     "BundleManifest",
@@ -127,11 +126,14 @@ __all__ = [
     "RegistryConfig",
     "StorageConfig",
     "DEFAULT_ENVIRONMENT",
-    "VALID_ENVIRONMENTS",
     "ENVIRONMENTS_DIR",
     # Authentication protocol
     "Credential",
     "AuthProvider",
     # Environment tracking
     "EnvironmentDigest",
+    # Utility functions
+    "canonical_task_id",
+    "bundle12",
+    "aggregation_id",
 ]

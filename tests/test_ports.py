@@ -8,7 +8,6 @@ from modelops_contracts import (
     SimulationService,
     ExecutionEnvironment,
     BundleRepository,
-    CAS,
     WireFunction,
     SimTask,
     SimReturn,
@@ -147,35 +146,6 @@ def test_bundle_repository_protocol():
     assert str(path) == "/tmp/bundles/abc123"
     assert repo.exists("sha256:abc123") is True
 
-
-def test_cas_protocol():
-    """Test that CAS protocol can be implemented."""
-    
-    class MockCAS:
-        def __init__(self):
-            self._store = {}
-        
-        def put(self, data: bytes, checksum_hex: str) -> str:
-            ref = f"cas://{checksum_hex}"
-            self._store[ref] = data
-            return ref
-        
-        def get(self, ref: str) -> bytes:
-            if ref not in self._store:
-                raise KeyError(f"Not found: {ref}")
-            return self._store[ref]
-        
-        def exists(self, ref: str) -> bool:
-            return ref in self._store
-    
-    # Should be a valid CAS implementation
-    cas: CAS = MockCAS()
-    
-    data = b"test data"
-    ref = cas.put(data, "abc123")
-    assert ref == "cas://abc123"
-    assert cas.get(ref) == data
-    assert cas.exists(ref) is True
     assert cas.exists("cas://nonexistent") is False
 
 

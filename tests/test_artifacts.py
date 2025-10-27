@@ -23,7 +23,7 @@ def test_table_artifact_inline():
 
 
 def test_table_artifact_reference():
-    """Test TableArtifact with reference to CAS."""
+    """Test TableArtifact with external reference."""
     ref_path = "ab/cd/abcdef123456"
     checksum = "b" * 64
     
