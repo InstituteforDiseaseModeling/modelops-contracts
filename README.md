@@ -1,5 +1,7 @@
 # ModelOps Contracts
 
+[![Tests](https://github.com/institutefordiseasemodeling/modelops-contracts/actions/workflows/tests.yml/badge.svg)](https://github.com/institutefordiseasemodeling/modelops-contracts/actions/workflows/tests.yml)
+
 Stable interface between ModelOps (infrastructure) and Calabaria (science).
 
 ## Installation

@@ -1,215 +1,121 @@
 """Tests for manifest types."""
 
 import pytest
+from pathlib import Path
 from modelops_contracts import ModelEntry, BundleManifest
 
 
 class TestModelEntry:
     """Tests for ModelEntry validation and functionality."""
 
-    def test_model_entry_validates_digest_format(self):
-        """Model digest must be 64-character hex string."""
-        # Valid digest
-        valid_entry = ModelEntry(
-            entrypoint_base="models.seir.StochasticSEIR",
+    def test_model_entry_creation(self):
+        """Test basic ModelEntry creation with required fields."""
+        entry = ModelEntry(
+            entrypoint="models.seir:StochasticSEIR",
+            path=Path("models/seir.py"),
+            class_name="StochasticSEIR",
             scenarios=["baseline"],
             outputs=["infections"],
             parameters=["beta", "gamma"],
-            model_digest="a" * 64
+            model_digest="sha256:" + "a" * 64
         )
-        assert valid_entry.model_digest == "a" * 64
+        assert entry.entrypoint == "models.seir:StochasticSEIR"
+        assert entry.class_name == "StochasticSEIR"
+        assert entry.model_digest == "sha256:" + "a" * 64
 
-        # Invalid: too short
-        with pytest.raises(ValueError, match="64-character hex"):
-            ModelEntry(
-                entrypoint_base="models.seir.StochasticSEIR",
-                scenarios=["baseline"],
-                outputs=["infections"],
-                parameters=["beta"],
-                model_digest="abc123"
-            )
-
-        # Invalid: non-hex characters
-        with pytest.raises(ValueError, match="64-character hex"):
-            ModelEntry(
-                entrypoint_base="models.seir.StochasticSEIR",
-                scenarios=["baseline"],
-                outputs=["infections"],
-                parameters=["beta"],
-                model_digest="z" * 64
-            )
-
-    def test_model_entry_requires_scenarios(self):
-        """ModelEntry must have at least one scenario."""
-        # Valid: has scenarios
-        valid_entry = ModelEntry(
-            entrypoint_base="models.test.Model",
-            scenarios=["baseline", "intervention"],
-            outputs=["results"],
-            parameters=["x"],
-            model_digest="0" * 64
-        )
-        assert len(valid_entry.scenarios) == 2
-
-        # Invalid: empty scenarios
-        with pytest.raises(ValueError, match="at least one scenario"):
-            ModelEntry(
-                entrypoint_base="models.test.Model",
-                scenarios=[],
-                outputs=["results"],
-                parameters=["x"],
-                model_digest="0" * 64
-            )
-
-    def test_model_entry_requires_parameters(self):
-        """ModelEntry must have at least one parameter."""
-        # Valid: has parameters
-        valid_entry = ModelEntry(
-            entrypoint_base="models.test.Model",
-            scenarios=["baseline"],
-            outputs=["results"],
-            parameters=["x", "y", "z"],
-            model_digest="0" * 64
-        )
-        assert len(valid_entry.parameters) == 3
-
-        # Invalid: empty parameters
-        with pytest.raises(ValueError, match="at least one parameter"):
-            ModelEntry(
-                entrypoint_base="models.test.Model",
-                scenarios=["baseline"],
-                outputs=["results"],
-                parameters=[],
-                model_digest="0" * 64
-            )
-
-    def test_model_entry_get_entrypoints(self):
-        """Test entrypoint formatting with scenarios."""
+    def test_model_entry_optional_fields(self):
+        """Test ModelEntry with minimal required fields."""
         entry = ModelEntry(
-            entrypoint_base="models.seir.StochasticSEIR",
+            entrypoint="models.test:Model",
+            path=Path("models/test.py"),
+            class_name="Model"
+        )
+        assert entry.scenarios == []
+        assert entry.parameters == []
+        assert entry.outputs == []
+        assert entry.model_digest is None
+
+    def test_model_entry_with_scenarios(self):
+        """Test ModelEntry with multiple scenarios."""
+        entry = ModelEntry(
+            entrypoint="models.seir:StochasticSEIR",
+            path=Path("models/seir.py"),
+            class_name="StochasticSEIR",
             scenarios=["baseline", "lockdown", "vaccination"],
             outputs=["infections"],
-            parameters=["beta"],
-            model_digest="0" * 64
+            parameters=["beta"]
         )
+        assert len(entry.scenarios) == 3
+        assert "baseline" in entry.scenarios
+        assert "lockdown" in entry.scenarios
 
-        entrypoints = entry.get_entrypoints()
-        assert len(entrypoints) == 3
-        assert "models.seir.StochasticSEIR/baseline" in entrypoints
-        assert "models.seir.StochasticSEIR/lockdown" in entrypoints
-        assert "models.seir.StochasticSEIR/vaccination" in entrypoints
+    def test_model_entry_with_parameters(self):
+        """Test ModelEntry with multiple parameters."""
+        entry = ModelEntry(
+            entrypoint="models.test:Model",
+            path=Path("models/test.py"),
+            class_name="Model",
+            parameters=["x", "y", "z"]
+        )
+        assert len(entry.parameters) == 3
+        assert "x" in entry.parameters
 
 
 class TestBundleManifest:
     """Tests for BundleManifest validation and functionality."""
 
-    def test_bundle_manifest_validation(self):
-        """BundleManifest validates required fields."""
+    def test_bundle_manifest_creation(self):
+        """Test basic BundleManifest creation."""
         model = ModelEntry(
-            entrypoint_base="models.test.Model",
+            entrypoint="models.test:Model",
+            path=Path("models/test.py"),
+            class_name="Model",
             scenarios=["baseline"],
             outputs=["results"],
             parameters=["x"],
-            model_digest="1" * 64
+            model_digest="sha256:" + "1" * 64
         )
 
         # Valid manifest
         manifest = BundleManifest(
             bundle_ref="oci://registry/bundle:latest",
-            bundle_digest="2" * 64,
-            models={"models.test.Model": model},
+            bundle_digest="2" * 64,  # No sha256: prefix
+            models={"models.test:Model": model},
             version=1
         )
         assert manifest.bundle_digest == "2" * 64
+        assert len(manifest.models) == 1
 
-        # Invalid: bad bundle digest
-        with pytest.raises(ValueError, match="64-character hex"):
-            BundleManifest(
-                bundle_ref="oci://registry/bundle:latest",
-                bundle_digest="not-a-hash",
-                models={"models.test.Model": model}
-            )
-
-        # Invalid: empty models
-        with pytest.raises(ValueError, match="at least one model"):
-            BundleManifest(
-                bundle_ref="oci://registry/bundle:latest",
-                bundle_digest="2" * 64,
-                models={}
-            )
-
-        # Invalid: empty bundle_ref
-        with pytest.raises(ValueError, match="bundle_ref must be non-empty"):
-            BundleManifest(
-                bundle_ref="",
-                bundle_digest="2" * 64,
-                models={"models.test.Model": model}
-            )
-
-    def test_get_model_by_entrypoint(self):
-        """Test model lookup by entrypoint base."""
+    def test_bundle_manifest_with_multiple_models(self):
+        """Test BundleManifest with multiple models."""
         model1 = ModelEntry(
-            entrypoint_base="models.seir.SEIR",
+            entrypoint="models.seir:SEIR",
+            path=Path("models/seir.py"),
+            class_name="SEIR",
             scenarios=["baseline"],
             outputs=["infections"],
             parameters=["beta"],
-            model_digest="1" * 64
+            model_digest="sha256:" + "1" * 64
         )
         model2 = ModelEntry(
-            entrypoint_base="models.sir.SIR",
+            entrypoint="models.sir:SIR",
+            path=Path("models/sir.py"),
+            class_name="SIR",
             scenarios=["baseline"],
             outputs=["infections"],
             parameters=["beta"],
-            model_digest="2" * 64
+            model_digest="sha256:" + "2" * 64
         )
 
         manifest = BundleManifest(
             bundle_ref="local://dev",
-            bundle_digest="3" * 64,
+            bundle_digest="3" * 64,  # No sha256: prefix
             models={
-                "models.seir.SEIR": model1,
-                "models.sir.SIR": model2
+                "models.seir:SEIR": model1,
+                "models.sir:SIR": model2
             }
         )
 
-        # Found
-        found = manifest.get_model_by_entrypoint("models.seir.SEIR")
-        assert found == model1
-
-        # Not found
-        not_found = manifest.get_model_by_entrypoint("models.unknown.Model")
-        assert not_found is None
-
-    def test_list_all_entrypoints(self):
-        """Test listing all available entrypoints."""
-        model1 = ModelEntry(
-            entrypoint_base="models.a.ModelA",
-            scenarios=["s1", "s2"],
-            outputs=["out"],
-            parameters=["p"],
-            model_digest="1" * 64
-        )
-        model2 = ModelEntry(
-            entrypoint_base="models.b.ModelB",
-            scenarios=["baseline"],
-            outputs=["out"],
-            parameters=["p"],
-            model_digest="2" * 64
-        )
-
-        manifest = BundleManifest(
-            bundle_ref="local://dev",
-            bundle_digest="3" * 64,
-            models={
-                "a": model1,
-                "b": model2
-            }
-        )
-
-        entrypoints = manifest.list_all_entrypoints()
-        assert len(entrypoints) == 3
-        assert "models.a.ModelA/s1" in entrypoints
-        assert "models.a.ModelA/s2" in entrypoints
-        assert "models.b.ModelB/baseline" in entrypoints
-        # Should be sorted
-        assert entrypoints == sorted(entrypoints)
+        assert len(manifest.models) == 2
+        assert "models.seir:SEIR" in manifest.models
+        assert "models.sir:SIR" in manifest.models

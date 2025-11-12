@@ -129,24 +129,29 @@ def test_execution_environment_protocol():
 
 def test_bundle_repository_protocol():
     """Test that BundleRepository protocol can be implemented."""
-    
+
     class MockBundleRepository:
+        def __init__(self):
+            self._bundles = set()
+
         def ensure_local(self, bundle_ref: str) -> Tuple[str, Path]:
             digest = bundle_ref.split(":")[-1] if ":" in bundle_ref else bundle_ref
+            self._bundles.add(digest)
             return digest, Path(f"/tmp/bundles/{digest}")
-        
+
         def exists(self, bundle_ref: str) -> bool:
-            return True
-    
+            digest = bundle_ref.split(":")[-1] if ":" in bundle_ref else bundle_ref
+            return digest in self._bundles
+
     # Should be a valid BundleRepository implementation
     repo: BundleRepository = MockBundleRepository()
-    
+
     digest, path = repo.ensure_local("sha256:abc123")
     assert digest == "abc123"
     assert str(path) == "/tmp/bundles/abc123"
     assert repo.exists("sha256:abc123") is True
 
-    assert cas.exists("cas://nonexistent") is False
+    assert repo.exists("cas://nonexistent") is False
 
 
 def test_wire_function_protocol():
