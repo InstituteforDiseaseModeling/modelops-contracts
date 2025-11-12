@@ -367,8 +367,9 @@ class BundleRegistry(PydanticBaseModel):
         for target_id, target in self.targets.items():
             if not target.path.exists():
                 errors.append(f"Target {target_id}: file not found at {target.path}")
-            if not target.observation.exists():
-                errors.append(f"Target {target_id}: observation not found at {target.observation}")
+            for data_file in target.data:
+                if not data_file.exists():
+                    errors.append(f"Target {target_id}: data dependency not found at {data_file}")
 
         return errors
 

@@ -94,20 +94,22 @@ class TestTargetEntry:
 
         entry = TargetEntry(
             path=target_file,
+            entrypoint="target:evaluate",
             model_output="prevalence",
-            observation=obs_file
+            data=[obs_file]
         )
 
         assert entry.path == target_file
         assert entry.model_output == "prevalence"
-        assert entry.observation == obs_file
+        assert entry.data == [obs_file]
 
     def test_target_to_from_dict(self, tmp_path):
         """Test target serialization."""
         entry = TargetEntry(
             path=tmp_path / "target.py",
+            entrypoint="target:eval",
             model_output="prevalence",
-            observation=tmp_path / "obs.csv",
+            data=[tmp_path / "obs.csv"],
             target_digest="digest_456"
         )
 
@@ -116,6 +118,7 @@ class TestTargetEntry:
 
         assert restored.model_output == entry.model_output
         assert restored.target_digest == entry.target_digest
+        assert restored.data == entry.data
 
 
 class TestBundleRegistry:
@@ -162,8 +165,9 @@ class TestBundleRegistry:
         entry = registry.add_target(
             target_id="test_target",
             path=target_file,
+            entrypoint="target:eval",
             model_output="output1",
-            observation=obs_file
+            data=[obs_file]
         )
 
         assert "test_target" in registry.targets
@@ -210,8 +214,9 @@ class TestBundleRegistry:
         registry.add_target(
             target_id="target1",
             path=target_file,
+            entrypoint="target:t",
             model_output="out1",
-            observation=obs_file
+            data=[obs_file]
         )
 
         # Save
@@ -261,8 +266,9 @@ class TestBundleRegistry:
         registry.add_target(
             target_id="t1",
             path=target_file,
+            entrypoint="target:eval",
             model_output="out",
-            observation=obs_file
+            data=[obs_file]
         )
 
         # Get all dependencies
