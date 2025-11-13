@@ -18,6 +18,19 @@ DEFAULT_ENVIRONMENT = "dev"  # From Pulumi's default stack naming - may change i
 ENVIRONMENTS_DIR = Path.home() / ".modelops" / "bundle-env"
 
 
+def _get_environments_dir() -> Path:
+    """Get environments directory, resolving home dynamically for test isolation.
+
+    This function exists to support test mocking of Path.home(). The module-level
+    ENVIRONMENTS_DIR constant is evaluated at import time and cannot be mocked,
+    but this function evaluates Path.home() at call time.
+
+    Returns:
+        Path to environments directory
+    """
+    return Path.home() / ".modelops" / "bundle-env"
+
+
 class RegistryConfig(BaseModel):
     """OCI registry configuration for bundle artifacts."""
 
@@ -88,7 +101,7 @@ class BundleEnvironment(BaseModel):
             FileNotFoundError: If environment file doesn't exist
             ValueError: If environment file is invalid
         """
-        env_file = ENVIRONMENTS_DIR / f"{env_name}.yaml"
+        env_file = _get_environments_dir() / f"{env_name}.yaml"
 
         if not env_file.exists():
             available = cls.list_environments()
@@ -99,7 +112,7 @@ class BundleEnvironment(BaseModel):
                 )
             else:
                 raise FileNotFoundError(
-                    f"No bundle environments found in {ENVIRONMENTS_DIR}. "
+                    f"No bundle environments found in {_get_environments_dir()}. "
                     f"Run 'mops infra up' to create one."
                 )
 
@@ -130,9 +143,9 @@ class BundleEnvironment(BaseModel):
             Path to saved file
         """
         env_name = env_name or self.environment
-        ENVIRONMENTS_DIR.mkdir(parents=True, exist_ok=True)
+        _get_environments_dir().mkdir(parents=True, exist_ok=True)
 
-        env_file = ENVIRONMENTS_DIR / f"{env_name}.yaml"
+        env_file = _get_environments_dir() / f"{env_name}.yaml"
         self.to_yaml(env_file)
         return env_file
 
@@ -164,11 +177,11 @@ class BundleEnvironment(BaseModel):
         Returns:
             Sorted list of environment names
         """
-        if not ENVIRONMENTS_DIR.exists():
+        if not _get_environments_dir().exists():
             return []
 
         envs = []
-        for yaml_file in ENVIRONMENTS_DIR.glob("*.yaml"):
+        for yaml_file in _get_environments_dir().glob("*.yaml"):
             try:
                 # Validate it's actually a BundleEnvironment
                 cls.from_yaml(yaml_file)
