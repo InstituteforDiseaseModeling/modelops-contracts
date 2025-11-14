@@ -237,6 +237,31 @@ class TargetEntry(PydanticBaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
+    def compute_digest(self, base_path: Optional[Path] = None) -> Optional[str]:
+        """Compute and store the digest of the target file.
+
+        Args:
+            base_path: Base directory for resolving relative paths
+
+        Returns:
+            The computed digest in format "sha256:xxxx" or None if file doesn't exist
+        """
+        import hashlib
+        base = base_path or Path.cwd()
+        target_file = base / self.path if not self.path.is_absolute() else self.path
+
+        if not target_file.exists():
+            return None
+
+        sha256 = hashlib.sha256()
+        with target_file.open('rb') as f:
+            for chunk in iter(lambda: f.read(8192), b''):
+                sha256.update(chunk)
+
+        digest = f"sha256:{sha256.hexdigest()}"
+        self.target_digest = digest
+        return digest
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for YAML serialization."""
         return {
@@ -391,13 +416,39 @@ class BundleRegistry(PydanticBaseModel):
         return sorted(list(dependencies))
 
     def save(self, path: Path) -> None:
-        """Save registry to YAML file.
+        """Save registry to YAML file atomically.
+
+        Uses temp file + rename to ensure atomic writes (no partial/corrupted state).
 
         Args:
             path: Path to YAML file to write
         """
-        with open(path, 'w') as f:
-            yaml.safe_dump(self.to_dict(), f, sort_keys=False)
+        import tempfile
+        import os
+
+        # Ensure parent directory exists
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write to temp file in same directory (same filesystem for atomic rename)
+        fd, temp_path = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.tmp",
+            suffix=".yaml"
+        )
+
+        try:
+            with os.fdopen(fd, 'w') as f:
+                yaml.safe_dump(self.to_dict(), f, sort_keys=False)
+
+            # Atomic rename (overwrites destination)
+            os.replace(temp_path, path)
+        except Exception:
+            # Clean up temp file on error
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
 
     @classmethod
     def load(cls, path: Path) -> "BundleRegistry":
