@@ -416,39 +416,13 @@ class BundleRegistry(PydanticBaseModel):
         return sorted(list(dependencies))
 
     def save(self, path: Path) -> None:
-        """Save registry to YAML file atomically.
-
-        Uses temp file + rename to ensure atomic writes (no partial/corrupted state).
+        """Save registry to YAML file.
 
         Args:
             path: Path to YAML file to write
         """
-        import tempfile
-        import os
-
-        # Ensure parent directory exists
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write to temp file in same directory (same filesystem for atomic rename)
-        fd, temp_path = tempfile.mkstemp(
-            dir=path.parent,
-            prefix=f".{path.name}.tmp",
-            suffix=".yaml"
-        )
-
-        try:
-            with os.fdopen(fd, 'w') as f:
-                yaml.safe_dump(self.to_dict(), f, sort_keys=False)
-
-            # Atomic rename (overwrites destination)
-            os.replace(temp_path, path)
-        except Exception:
-            # Clean up temp file on error
-            try:
-                os.unlink(temp_path)
-            except OSError:
-                pass
-            raise
+        with open(path, 'w') as f:
+            yaml.safe_dump(self.to_dict(), f, sort_keys=False)
 
     @classmethod
     def load(cls, path: Path) -> "BundleRegistry":
