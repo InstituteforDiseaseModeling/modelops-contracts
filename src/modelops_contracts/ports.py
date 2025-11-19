@@ -9,10 +9,10 @@ The ports follow the Hexagonal Architecture pattern:
 - Secondary/Driven ports: How the application drives external systems
 """
 
-from typing import Protocol, Generic, TypeVar, Optional, List, Dict, Any, Tuple, Mapping
+from typing import Protocol, Generic, TypeVar, Optional, List, Dict, Any, Tuple, Mapping, Sequence
 from pathlib import Path
 
-from .simulation import SimTask
+from .simulation import SimTask, ReplicateSet, AggregationReturn, AggregationTask
 from .artifacts import SimReturn
 from .entrypoint import EntryPointId
 from .types import Scalar
@@ -87,6 +87,39 @@ class SimulationService(Protocol):
         """
         ...
 
+    def submit_replicate_set(
+        self,
+        replicate_set: ReplicateSet,
+        target_entrypoint: Optional[str] = None,
+    ) -> Future[AggregationReturn | Sequence[SimReturn]]:
+        """Submit a replicate set, optionally running worker-side aggregation.
+
+        Args:
+            replicate_set: Group of simulations sharing a parameter set
+            target_entrypoint: Optional aggregation entrypoint to run on worker
+
+        Returns:
+            Future resolving to AggregationReturn when aggregation requested,
+            otherwise a list of SimReturn objects.
+        """
+        ...
+
+    def submit_batch_with_aggregation(
+        self,
+        replicate_sets: List[ReplicateSet],
+        target_entrypoint: str,
+    ) -> List[Future[AggregationReturn]]:
+        """Submit multiple replicate sets with worker-side aggregation.
+
+        Args:
+            replicate_sets: List of replicate sets to evaluate
+            target_entrypoint: Target evaluation entrypoint
+
+        Returns:
+            Futures resolving to AggregationReturn for each replicate set.
+        """
+        ...
+
 
 # Secondary/Driven Ports (Outbound)
 
@@ -110,6 +143,20 @@ class ExecutionEnvironment(Protocol):
         Returns:
             SimReturn with outputs and metadata
             
+        Raises:
+            Various exceptions on execution failure
+        """
+        ...
+
+    def run_aggregation(self, task: AggregationTask) -> AggregationReturn:
+        """Execute aggregation task (target evaluation) inside environment.
+
+        Args:
+            task: Aggregation task containing sim returns and target entrypoint
+
+        Returns:
+            AggregationReturn with loss/diagnostics
+
         Raises:
             Various exceptions on execution failure
         """
@@ -211,4 +258,8 @@ __all__ = [
     "ExecutionEnvironment",
     "BundleRepository",
     "WireFunction",
+    # Aggregation types
+    "ReplicateSet",
+    "AggregationTask",
+    "AggregationReturn",
 ]
