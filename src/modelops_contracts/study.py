@@ -101,10 +101,22 @@ class SimulationStudy:
         from .jobs import TargetSpec
         target_spec = None
         if self.targets:
+            # Extract target metadata if present
+            target_ids = self.metadata.get("target_ids")
+            target_set = self.metadata.get("target_set")
+
             target_spec = TargetSpec(
-                data={"target_entrypoints": self.targets},
+                data={
+                    "target_entrypoints": self.targets,
+                    "target_ids": target_ids,
+                    "target_set": target_set,
+                },
                 loss_function="default",  # Can be customized later
-                metadata={"targets": self.targets}
+                metadata={
+                    "targets": self.targets,
+                    "target_ids": target_ids,
+                    "target_set": target_set,
+                }
             )
 
         return SimJob(
@@ -137,6 +149,42 @@ class SimulationStudy:
     def total_simulation_count(self) -> int:
         """Get total number of simulations (params × replicates)."""
         return len(self.parameter_sets) * self.n_replicates
+
+    def with_targets(
+        self,
+        targets: List[str],
+        target_ids: List[str] | None = None,
+        target_set: str | None = None,
+    ) -> "SimulationStudy":
+        """Return a new SimulationStudy with updated targets and metadata.
+
+        This is an immutable update that preserves all other fields while
+        updating the targets and related metadata.
+
+        Args:
+            targets: List of target entrypoints
+            target_ids: Optional list of target IDs for tracking
+            target_set: Optional target set name for reporting
+
+        Returns:
+            New SimulationStudy instance with updated targets
+        """
+        updated_metadata = {**self.metadata}
+        if target_ids is not None:
+            updated_metadata["target_ids"] = target_ids
+        if target_set is not None:
+            updated_metadata["target_set"] = target_set
+
+        return SimulationStudy(
+            model=self.model,
+            scenario=self.scenario,
+            parameter_sets=self.parameter_sets,
+            sampling_method=self.sampling_method,
+            n_replicates=self.n_replicates,
+            outputs=self.outputs,
+            targets=targets,
+            metadata=updated_metadata,
+        )
 
 
 @dataclass(frozen=True)
