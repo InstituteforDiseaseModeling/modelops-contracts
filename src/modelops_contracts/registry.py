@@ -284,6 +284,26 @@ class TargetEntry(PydanticBaseModel):
         )
 
 
+class TargetSet(PydanticBaseModel):
+    """Logical grouping of targets with optional weights."""
+
+    targets: List[str] = Field(default_factory=list)
+    weights: Dict[str, float] = Field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "targets": list(self.targets),
+            "weights": dict(self.weights),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TargetSet":
+        return cls(
+            targets=list(data.get("targets", [])),
+            weights=dict(data.get("weights", {})),
+        )
+
+
 @runtime_checkable
 class RegistryReader(Protocol):
     """Protocol for reading model registry information.
@@ -317,6 +337,7 @@ class BundleRegistry(PydanticBaseModel):
     version: str = "1.0"
     models: Dict[str, ModelEntry] = Field(default_factory=dict)
     targets: Dict[str, TargetEntry] = Field(default_factory=dict)
+    target_sets: Dict[str, TargetSet] = Field(default_factory=dict)
 
     def add_model(
         self,
@@ -375,6 +396,40 @@ class BundleRegistry(PydanticBaseModel):
         self.targets[target_id] = entry
         return entry
 
+    def set_target_set(
+        self,
+        name: str,
+        targets: List[str],
+        weights: Optional[Dict[str, float]] = None,
+    ) -> TargetSet:
+        """Create or replace a named target set."""
+        unknown = [tid for tid in targets if tid not in self.targets]
+        if unknown:
+            raise ValueError(f"Target set '{name}' references unknown targets: {', '.join(unknown)}")
+
+        normalized_weights: Dict[str, float] = {}
+        if weights:
+            for tid, weight in weights.items():
+                if tid not in targets:
+                    continue
+                normalized_weights[tid] = float(weight)
+
+        target_set = TargetSet(targets=list(dict.fromkeys(targets)), weights=normalized_weights)
+        self.target_sets[name] = target_set
+        return target_set
+
+    def delete_target_set(self, name: str) -> bool:
+        """Delete a target set if it exists."""
+        return self.target_sets.pop(name, None) is not None
+
+    def remove_target_from_sets(self, target_id: str) -> None:
+        """Remove target references from all sets."""
+        for target_set in self.target_sets.values():
+            if target_id in target_set.targets:
+                target_set.targets = [tid for tid in target_set.targets if tid != target_id]
+            if target_id in target_set.weights:
+                target_set.weights.pop(target_id, None)
+
     def validate(self) -> List[str]:
         """Validate registry entries."""
         errors = []
@@ -395,6 +450,19 @@ class BundleRegistry(PydanticBaseModel):
             for data_file in target.data:
                 if not data_file.exists():
                     errors.append(f"Target {target_id}: data dependency not found at {data_file}")
+
+        for set_name, target_set in self.target_sets.items():
+            missing = [tid for tid in target_set.targets if tid not in self.targets]
+            if missing:
+                errors.append(
+                    f"Target set {set_name}: references unknown targets {', '.join(sorted(missing))}"
+                )
+            unused_weights = [tid for tid in target_set.weights if tid not in target_set.targets]
+            if unused_weights:
+                errors.append(
+                    f"Target set {set_name}: weights configured for non-member targets "
+                    f"{', '.join(sorted(unused_weights))}"
+                )
 
         return errors
 
@@ -443,7 +511,8 @@ class BundleRegistry(PydanticBaseModel):
         return {
             "version": self.version,
             "models": {k: v.to_dict() for k, v in self.models.items()},
-            "targets": {k: v.to_dict() for k, v in self.targets.items()}
+            "targets": {k: v.to_dict() for k, v in self.targets.items()},
+            "target_sets": {k: v.to_dict() for k, v in self.target_sets.items()},
         }
 
     @classmethod
@@ -456,6 +525,9 @@ class BundleRegistry(PydanticBaseModel):
 
         for target_id, target_data in data.get("targets", {}).items():
             registry.targets[target_id] = TargetEntry.from_dict(target_data)
+
+        for set_name, set_data in data.get("target_sets", {}).items():
+            registry.target_sets[set_name] = TargetSet.from_dict(set_data)
 
         return registry
 
@@ -540,6 +612,57 @@ def discover_model_classes(file_path: Path) -> List[Tuple[str, List[str]]]:
             model_classes.append((class_name, base_names))
 
     return model_classes
+
+
+def discover_model_outputs(file_path: Path) -> Dict[str, List[str]]:
+    """Discover @model_output decorators grouped by class name.
+
+    This is a lightweight contract with Calabaria's decorator API so that
+    tooling (e.g. modelops-bundle) can infer which outputs a model exposes
+    without executing user code. If Calabaria changes the decorator name or
+    signature, this helper will need to be updated accordingly.
+    """
+    outputs: Dict[str, List[str]] = {}
+    with open(file_path) as f:
+        tree = ast.parse(f.read())
+
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            class_outputs: List[str] = []
+            for method in node.body:
+                if isinstance(method, ast.FunctionDef):
+                    for decorator in method.decorator_list:
+                        decorator_name = None
+                        output_name = None
+
+                        if isinstance(decorator, ast.Name):
+                            decorator_name = decorator.id
+                        elif isinstance(decorator, ast.Call):
+                            if isinstance(decorator.func, ast.Name):
+                                decorator_name = decorator.func.id
+                            elif isinstance(decorator.func, ast.Attribute):
+                                decorator_name = decorator.func.attr
+
+                            if decorator.args:
+                                try:
+                                    output_name = ast.literal_eval(decorator.args[0])
+                                except Exception:
+                                    output_name = ast.unparse(decorator.args[0])
+                            elif decorator.keywords:
+                                for kw in decorator.keywords:
+                                    if kw.arg in ("name", "output"):
+                                        try:
+                                            output_name = ast.literal_eval(kw.value)
+                                        except Exception:
+                                            output_name = ast.unparse(kw.value)
+                                        break
+
+                        if decorator_name == "model_output":
+                            class_outputs.append(str(output_name or method.name))
+            if class_outputs:
+                outputs[node.name] = class_outputs
+
+    return outputs
 
 
 def discover_target_functions(file_path: Path) -> List[Tuple[str, Dict[str, Any]]]:
