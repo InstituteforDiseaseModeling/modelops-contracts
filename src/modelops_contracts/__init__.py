@@ -48,7 +48,7 @@ from .registry import (
     REGISTRY_PATH,
 )
 from .jobs import Job, SimJob, CalibrationJob, TargetSpec
-from .study import SimulationStudy, CalibrationSpec
+from .study import ParameterSetEntry, SimulationStudy, CalibrationSpec
 from .bundle_environment import (
     BundleEnvironment,
     RegistryConfig,
@@ -123,6 +123,7 @@ __all__ = [
     "CalibrationJob",
     "TargetSpec",
     # Study types (parameter-space exploration)
+    "ParameterSetEntry",
     "SimulationStudy",
     "CalibrationSpec",
     # Bundle environment configuration

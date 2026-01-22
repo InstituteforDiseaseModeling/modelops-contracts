@@ -16,6 +16,27 @@ from .jobs import SimJob
 
 
 @dataclass(frozen=True)
+class ParameterSetEntry:
+    """A parameter set with optional explicit seed.
+
+    When seed is None, n_replicates tasks will be generated with
+    derived seeds. When seed is specified, exactly one task is
+    created with that seed.
+
+    Attributes:
+        params: Parameter dictionary
+        seed: Optional explicit seed (None = generate from n_replicates)
+    """
+    params: Dict[str, Any]
+    seed: Optional[int] = None
+
+    def __post_init__(self):
+        if self.seed is not None:
+            if not isinstance(self.seed, int) or not (0 <= self.seed <= 2**64 - 1):
+                raise ValueError(f"seed must be int in uint64 range, got {self.seed}")
+
+
+@dataclass(frozen=True)
 class SimulationStudy:
     """Abstract simulation study without execution details.
 
@@ -27,20 +48,57 @@ class SimulationStudy:
     Attributes:
         model: Module path to simulation class (e.g., "models.seir")
         scenario: Scenario name (e.g., "baseline")
-        parameter_sets: List of parameter dictionaries to evaluate
+        parameter_sets: List of ParameterSetEntry objects (params + optional seed)
         sampling_method: How parameters were generated ("sobol", "grid", "manual")
-        n_replicates: Number of replicates per parameter set
+        n_replicates: Number of replicates per parameter set (used when entry.seed is None)
         outputs: Specific outputs to extract (None = all)
         metadata: Additional study metadata
     """
     model: str
     scenario: str
-    parameter_sets: List[Dict[str, Any]]  # Plain dicts, no wrapper
+    parameter_sets: List[ParameterSetEntry]
     sampling_method: str
     n_replicates: int = 1
     outputs: Optional[List[str]] = None
     targets: Optional[List[str]] = None  # Target entrypoints for loss computation
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SimulationStudy":
+        """Parse JSON with backwards compatibility.
+
+        Supports two formats:
+        - Old format: parameter_sets is List[Dict] (plain param dicts)
+        - New format: parameter_sets is List[{"params": {...}, "seed": int}]
+
+        Args:
+            data: Dictionary parsed from JSON
+
+        Returns:
+            SimulationStudy instance
+        """
+        entries = []
+        for item in data.get("parameter_sets", []):
+            if isinstance(item, dict) and "params" in item:
+                # New format: {"params": {...}, "seed": 52}
+                entries.append(ParameterSetEntry(
+                    params=item["params"],
+                    seed=item.get("seed")
+                ))
+            else:
+                # Old format: {"beta": 0.08} → wrap as ParameterSetEntry
+                entries.append(ParameterSetEntry(params=item, seed=None))
+
+        return cls(
+            model=data["model"],
+            scenario=data["scenario"],
+            parameter_sets=entries,
+            sampling_method=data.get("sampling_method", "manual"),
+            n_replicates=data.get("n_replicates", 1),
+            outputs=data.get("outputs"),
+            targets=data.get("targets"),
+            metadata=data.get("metadata", {}),
+        )
 
     def to_simjob(self, bundle_ref: str, job_id: Optional[str] = None) -> SimJob:
         """Bind this study to a bundle to create executable SimJob.
@@ -67,21 +125,31 @@ class SimulationStudy:
 
         # Create tasks for all parameter sets and replicates
         tasks = []
-        for param_dict in self.parameter_sets:
-            # Get stable parameter ID for this parameter set
-            param_id = make_param_id(param_dict)
-
-            for replicate_idx in range(self.n_replicates):
-                # Create task with deterministic seed
+        for entry in self.parameter_sets:
+            if entry.seed is not None:
+                # EXPLICIT: Create 1 task with specified seed
                 task = SimTask.from_components(
                     import_path=self.model,
                     scenario=self.scenario,
                     bundle_ref=bundle_ref,
-                    params=param_dict,  # from_components will create UniqueParameterSet
-                    seed=self._generate_seed(param_id, replicate_idx),
+                    params=entry.params,
+                    seed=entry.seed,
                     outputs=self.outputs
                 )
                 tasks.append(task)
+            else:
+                # AUTO: Generate n_replicates tasks with derived seeds
+                param_id = make_param_id(entry.params)
+                for replicate_idx in range(self.n_replicates):
+                    task = SimTask.from_components(
+                        import_path=self.model,
+                        scenario=self.scenario,
+                        bundle_ref=bundle_ref,
+                        params=entry.params,
+                        seed=self._generate_seed(param_id, replicate_idx),
+                        outputs=self.outputs
+                    )
+                    tasks.append(task)
 
         # Create job directly with tasks (no batch wrapper)
         if not job_id:
@@ -147,8 +215,18 @@ class SimulationStudy:
         return len(self.parameter_sets)
 
     def total_simulation_count(self) -> int:
-        """Get total number of simulations (params × replicates)."""
-        return len(self.parameter_sets) * self.n_replicates
+        """Get total number of simulations.
+
+        For entries with explicit seeds: 1 task per entry.
+        For entries without seeds: n_replicates tasks per entry.
+        """
+        count = 0
+        for entry in self.parameter_sets:
+            if entry.seed is not None:
+                count += 1
+            else:
+                count += self.n_replicates
+        return count
 
     def with_targets(
         self,
@@ -207,6 +285,7 @@ class CalibrationSpec:
 
 
 __all__ = [
+    "ParameterSetEntry",
     "SimulationStudy",
     "CalibrationSpec",
 ]
